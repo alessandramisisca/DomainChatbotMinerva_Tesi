@@ -1,0 +1,147 @@
+services:
+  old_parser:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: minerva_old_parser
+    working_dir: /app/backend
+    environment:
+      - PYTHONPATH=/app
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./backend:/app/backend
+      - ./domains.json:/app/backend/domains.json
+      - ./gs_data:/app/backend/gs_data
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 3G
+    command: ["uvicorn", "src.api_server.server:app", "--host", "0.0.0.0", "--port", "8003", "--workers", "1"]
+    networks:
+      - minerva_network
+
+  chatbot_backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: minerva_chatbot_backend
+    working_dir: /app/backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/app/backend
+      - ./domains.json:/app/domains.json
+      - hf_cache:/app/huggingface_cache
+      - ./models:/models
+    env_file: .env
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 5G
+    command: ["uvicorn", "src.api_server.server_chatbot:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]
+    environment:
+      - PYTHONPATH=/app/backend
+      - PYTHONUNBUFFERED=1
+      - MARIADB_HOST=mariadb
+      - MARIADB_PORT=3306
+      - MARIADB_USER=${MARIADB_USER}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - HF_HOME=/app/huggingface_cache
+      - LLM_MODEL=${LLM_MODEL}
+      - LLM_MODEL_PATH=${LLM_MODEL_PATH}
+      - LLM_N_CTX=${LLM_N_CTX}
+      - LLM_N_THREADS=${LLM_N_THREADS}
+      - LLM_N_GPU_LAYERS=${LLM_N_GPU_LAYERS}
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      old_parser:
+        condition: service_started
+    networks:
+      - minerva_network
+
+  mariadb:
+    image: mariadb:11
+    container_name: mariadb
+    ports:
+      - "3307:3306"
+    env_file: .env
+    environment:
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
+      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - MARIADB_USER=${MARIADB_USER}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+    volumes:
+      - mariadb_storage:/var/lib/mysql
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - minerva_network
+      
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: minerva_frontend
+    ports:
+      - "8004:8004"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - BACKEND_URL=http://chatbot_backend:8001
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    command: ["uvicorn", "src.frontend:app", "--host", "0.0.0.0", "--port", "8004", "--workers", "1"]
+    depends_on:
+      - chatbot_backend
+    networks:
+      - minerva_network
+
+    
+  frontend_chat:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: minerva_frontend_chat
+    ports:
+      - "8005:8005"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - BACKEND_URL=http://chatbot_backend:8001
+    volumes:
+      - ./frontend:/app
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    command: ["uvicorn", "src.chat_frontend:app", "--host", "0.0.0.0", "--port", "8005", "--workers", "1"]
+    depends_on:
+      - chatbot_backend
+    networks:
+      - minerva_network
+
+
+networks:
+  minerva_network:
+    driver: bridge
+
+volumes:
+  mariadb_storage:
+  ollama_storage:
+  hf_cache:

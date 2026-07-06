@@ -1,0 +1,21 @@
+fastapi
+uvicorn
+pydantic
+requests
+numpy
+ollama
+crawl4ai==0.8.6
+playwright
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1+cpu
+transformers==4.44.2
+sentence-transformers==3.0.1
+langchain-text-splitters
+jinja2
+python-multipart
+sqlalchemy
+pymysql
+mariadb
+tavily-python
+llama-cpp-python==0.3.2
+ddgs

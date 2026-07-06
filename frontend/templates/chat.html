@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minerva RAG Chatbot</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .prose-chat ul { list-style-type: disc; margin-left: 1.25rem; margin-bottom: 0.5rem; }
+        .prose-chat li { margin-bottom: 0.25rem; }
+    </style>
+</head>
+<body class="bg-[#fcf5f6] text-slate-800 flex flex-col h-screen font-sans antialiased">
+
+    <div id="customConfirmModal" class="fixed inset-0 bg-pink-950/20 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-2xl shadow-xl border border-pink-100 max-w-sm w-full mx-4 text-center">
+            <div class="text-3xl mb-2">⚠️</div>
+            <h3 id="confirmTitle" class="text-lg font-black text-[#822433] mb-2">Sei sicuro?</h3>
+            <p id="confirmMessage" class="text-slate-600 text-sm mb-5 font-medium">Questa azione non può essere annullata.</p>
+            <div class="flex gap-3 justify-center">
+                <button id="confirmCancelBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-xl text-sm transition-colors cursor-pointer">
+                    Annulla
+                </button>
+                <button id="confirmActionBtn" class="bg-[#822433] hover:bg-[#661b28] text-white font-black py-2 px-4 rounded-xl text-sm transition-colors cursor-pointer">
+                    Conferma
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="customAlertModal" class="fixed inset-0 bg-pink-950/20 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-2xl shadow-xl border border-pink-100 max-w-sm w-full mx-4 text-center">
+            <div id="alertIcon" class="text-3xl mb-2">ℹ️</div>
+            <p id="alertMessage" class="text-slate-800 font-bold text-sm mb-5 leading-relaxed">Messaggio di avviso.</p>
+            <button onclick="closeCustomAlert()" class="w-full bg-[#822433] hover:bg-[#661b28] text-white font-black py-2 px-4 rounded-xl text-sm transition-colors cursor-pointer">
+                Chiudi
+            </button>
+        </div>
+    </div>
+
+    <div id="loginModal" class="fixed inset-0 bg-pink-950/30 backdrop-blur-md flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl border border-pink-100 max-w-md w-full mx-4 text-center transform transition-all">
+            <div class="text-4xl mb-3">🎓</div>
+            <h2 class="text-2xl font-black text-[#822433] mb-2">Benvenuto in Minerva</h2>
+            <p class="text-slate-600 text-sm mb-6 font-medium">Inserisci il tuo ID Studente per accedere ai tuoi progetti e iniziare la conversazione RAG.</p>
+            
+            <div class="mb-6">
+                <input type="text" id="modalUserIdInput" placeholder="Es. student_test" 
+                    class="w-full bg-pink-50/30 text-[#822433] font-bold px-5 py-3 rounded-xl border-2 border-pink-200 outline-none focus:border-[#822433] focus:ring-4 focus:ring-pink-500/10 text-center shadow-inner text-lg">
+            </div>
+            
+            <button onclick="submitModalLogin()" 
+                    class="w-full bg-[#822433] hover:bg-[#661b28] text-white font-black py-3 px-6 rounded-xl shadow-lg shadow-pink-500/20 transition-all cursor-pointer text-lg">
+                Accedi
+            </button>
+        </div>
+    </div>
+        
+    <header class="bg-[#822433] text-white px-6 py-3 flex justify-between items-center font-bold shadow-md z-10">
+        <div class="flex items-center gap-2 text-lg">
+             Progetto Minerva - Assistente RAG
+        </div>
+        <div class="flex items-center gap-2 text-sm md:text-base">
+            <label for="userIdInput" class="text-white font-semibold">ID Studente:</label>
+            <input type="text" id="userIdInput" placeholder="Es. student_test" onchange="changeUser()"
+                   class="bg-white text-[#822433] font-semibold px-4 py-1.5 rounded-full border-2 border-pink-200 outline-none w-36 md:w-44 shadow-inner text-center">
+        </div>
+    </header>
+
+    <div class="main-container flex flex-1 overflow-hidden">
+        
+        <aside class="sidebar w-72 md:w-80 bg-[#f3d5da] text-pink-900 flex flex-col p-4 border-r border-pink-200 shadow-xl">
+            <button onclick="createNewSession()" 
+                    class="btn-new-chat bg-[#822433] hover:bg-[#661b28] text-white font-black py-3 px-4 rounded-full mb-5 shadow-md shadow-pink-500/20 transition-all transform hover:-translate-y-0.5 cursor-pointer text-center">
+                + Nuova Chat
+            </button>
+            
+            <div class="history-title text-xs uppercase tracking-wider text-pink-700 font-bold mb-3">
+                Cronologia Chat
+            </div>
+            
+            <div class="history-list flex-1 overflow-y-auto flex flex-col gap-2 pr-1" id="historyList">
+            </div>
+
+            <div class="sidebar-footer mt-auto pt-4 border-t border-pink-300">
+                <button onclick="clearAllSessions()" 
+                        class="w-full bg-white hover:bg-pink-50 text-[#822433] border border-pink-300 font-bold py-2 px-4 rounded-full text-sm transition-colors cursor-pointer shadow-sm">
+                     Cancella Tutte le Chat
+                </button>
+            </div>
+        </aside>
+
+        <main class="chat-area flex-1 flex flex-col bg-[#fcf5f6]">
+            
+            <div class="messages-container flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-4" id="messagesContainer">
+                <div class="message status bg-white text-[#822433] border border-pink-100 rounded-2xl px-5 py-3 max-w-[90%] mx-auto text-center font-black shadow-sm">
+                     Inserisci un messaggio in basso per iniziare la conversazione RAG.
+                </div>
+            </div>
+
+            <footer class="input-container p-4 bg-white border-t border-pink-100 flex gap-3 items-end shadow-md">
+                <textarea id="queryInput" placeholder="Chiedi qualcosa all'LLM (es. ultime notizie NBA o definizioni)..." 
+                    onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }"
+                    class="flex-1 resize-none h-12 max-h-32 min-h-[48px] p-3 border border-pink-200 rounded-xl bg-pink-50/5 outline-none font-semibold text-slate-900 focus:border-[#822433] focus:ring-2 focus:ring-pink-500/10 transition-all text-sm md:text-base"></textarea>
+                <button id="sendBtn" onclick="sendMessage()" 
+                        class="bg-[#822433] hover:bg-[#661b28] text-white font-black h-12 px-6 rounded-xl transition-colors shadow-sm flex items-center justify-center cursor-pointer">
+                    Invia 
+                </button>
+            </footer>
+        </main>
+
+    </div>
+
+    <script>
+        
+        let agentStatusInterval = null; 
+        let currentSessionId = "";
+
+        function showAgentStatus(statusText) {
+            const container = document.getElementById('messagesContainer');
+            let statusDiv = document.getElementById('activeAgentStatus');
+            
+            if (!statusDiv) {
+                statusDiv = document.createElement('div');
+                statusDiv.id = 'activeAgentStatus';
+                statusDiv.className = "message status bg-white text-[#822433] border border-red-100 rounded-2xl px-5 py-3 max-w-[90%] mx-auto text-center font-black shadow-sm animate-pulse w-full my-2";
+                
+                const activeBotMessage = container.querySelector('.prose-chat.self-start:last-child');
+                if (activeBotMessage) {
+                    container.insertBefore(statusDiv, activeBotMessage);
+                } else {
+                    container.appendChild(statusDiv);
+                }
+
+                let dotCount = 0;
+                statusDiv.setAttribute('data-base-text', statusText);
+
+                agentStatusInterval = setInterval(() => {
+                    dotCount = (dotCount + 1) % 4;
+                    const dots = ".".repeat(dotCount);
+                    const baseText = statusDiv.getAttribute('data-base-text');
+                    statusDiv.innerText = `⚙️ ${baseText}${dots}`;
+                }, 400);
+            } else {
+                statusDiv.setAttribute('data-base-text', statusText);
+            }
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function removeAgentStatus() { 
+            const statusDiv = document.getElementById('activeAgentStatus'); 
+            if (statusDiv) { statusDiv.remove(); } 
+            if (agentStatusInterval) { clearInterval(agentStatusInterval); agentStatusInterval = null; } 
+        }
+
+        function formatSourcesUI(urls) {
+            if (!urls || urls.length === 0) return "";
+            
+            let html = `<div class="mt-4 pt-3 border-t border-pink-100">
+                          <span class="text-xs font-bold text-[#822433] uppercase tracking-wider block mb-2">📄 Fonti utilizzate:</span>
+                          <div class="flex flex-wrap gap-2">`;
+            
+            urls.forEach(url => {
+                let domain = "";
+                try { 
+                    // Estrae solo il dominio (es. it.wikipedia.org) per un testo più pulito
+                    domain = new URL(url).hostname.replace('www.', ''); 
+                } catch(e) { 
+                    domain = "Link risorsa"; 
+                }
+
+                html += `<a href="${url}" target="_blank" rel="noopener noreferrer" 
+                            class="inline-flex items-center px-3 py-1.5 rounded-full bg-pink-50 text-[#822433] text-xs font-bold border border-pink-200 hover:bg-[#822433] hover:text-white transition-all shadow-sm decoration-none">
+                            🔗 ${domain}
+                         </a>`;
+            });
+            
+            html += `</div></div>`;
+            return html;
+        }
+
+        marked.setOptions({ gfm: true, breaks: true });
+
+        function savyAlert(message, icon = "⚠️") {
+            document.getElementById('alertIcon').innerText = icon;
+            document.getElementById('alertMessage').innerText = message;
+            document.getElementById('customAlertModal').classList.remove('hidden');
+        }
+
+        function closeCustomAlert() {
+            document.getElementById('customAlertModal').classList.add('hidden');
+        }
+
+        function savyConfirm(title, message, onConfirm) {
+            const modal = document.getElementById('customConfirmModal');
+            document.getElementById('confirmTitle').innerText = title;
+            document.getElementById('confirmMessage').innerText = message;
+            modal.classList.remove('hidden');
+            document.getElementById('confirmActionBtn').onclick = () => { modal.classList.add('hidden'); onConfirm(); };
+            document.getElementById('confirmCancelBtn').onclick = () => { modal.classList.add('hidden'); };
+        }
+
+        async function submitModalLogin() {
+            const modalInput = document.getElementById('modalUserIdInput');
+            const userId = modalInput.value.trim();
+            if (!userId) { savyAlert("Per favore, inserisci un ID Studente valido per continuare!"); return; }
+            document.getElementById('userIdInput').value = userId;
+            document.getElementById('loginModal').classList.add('hidden');
+            currentSessionId = "";
+            document.getElementById('messagesContainer').innerHTML = `
+                <div class="message status bg-white text-[#822433] border border-pink-100 rounded-2xl px-5 py-3 max-w-[90%] mx-auto text-center font-black shadow-sm">
+                    Benvenuto! Inserisci un messaggio in basso per iniziare la conversazione RAG.
+                </div>`;
+            await loadSessions();
+        }
+
+        document.getElementById('modalUserIdInput')?.addEventListener('keydown', function(e) { if (e.key === 'Enter') { submitModalLogin(); } });
+        function getUserId() { return document.getElementById('userIdInput').value.trim(); }
+
+        async function loadSessions() {
+            const userId = getUserId();
+            if (!userId) { document.getElementById('historyList').innerHTML = ""; return; }
+            try {
+                const response = await fetch(`/api/database/chat_all_session/${userId}`);
+                const data = await response.json();
+                if (data.status === "success") {
+                    const listContainer = document.getElementById('historyList');
+                    listContainer.innerHTML = "";
+                    data.sessions.forEach(session => {
+                        const item = document.createElement('div');
+                        const isActive = session.session_id === currentSessionId;
+                        
+                        const savedTitle = localStorage.getItem(`title_${session.session_id}`) || `📅 ${session.created_at}`;
+
+                        item.className = `flex justify-between items-center p-3 rounded-xl cursor-pointer text-sm font-bold transition-colors ${isActive ? 'bg-[#822433] text-white shadow-sm' : 'bg-white/60 hover:bg-white text-red-950 border border-red-200/50'}`;
+                        item.onclick = () => selectSession(session.session_id);
+                        
+                        item.innerHTML = `
+                            <div class="flex items-center gap-2 truncate flex-1 mr-1">
+                                <span id="title-text-${session.session_id}" class="truncate">${savedTitle}</span>
+                                <input type="text" id="title-input-${session.session_id}" value="${savedTitle}" 
+                                    class="hidden bg-white text-slate-800 px-2 py-0.5 rounded border border-red-300 w-full font-medium text-xs outline-none focus:border-[#822433]"
+                                    onclick="event.stopPropagation();"
+                                    onkeydown="if(event.key === 'Enter') { event.preventDefault(); saveChatTitle('${session.session_id}'); }">
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <button onclick="event.stopPropagation(); enableEditTitle('${session.session_id}')" 
+                                        class="${isActive ? 'text-red-200 hover:text-white' : 'text-red-400 hover:text-red-700'} text-xs transition-colors p-1" title="Rinomina chat">
+                                    ✏️
+                                </button>
+                                <button onclick="event.stopPropagation(); deleteSession('${session.session_id}')" 
+                                        class="${isActive ? 'text-red-200 hover:text-white' : 'text-red-400 hover:text-red-700'} text-xs transition-colors p-1" title="Elimina chat">
+                                    🗑️
+                                </button>
+                            </div>
+                        `;
+                        listContainer.appendChild(item);
+                    });
+                }
+            } catch (error) { console.error("Errore nel caricamento delle sessioni:", error); }
+        }
+
+        function enableEditTitle(sessionId) {
+            const textSpan = document.getElementById(`title-text-${sessionId}`);
+            const inputField = document.getElementById(`title-input-${sessionId}`);
+            
+            if (textSpan && inputField) {
+                textSpan.classList.add('hidden');
+                inputField.classList.remove('hidden');
+                inputField.focus();
+                inputField.select();
+                
+                inputField.onblur = () => {
+                    textSpan.classList.remove('hidden');
+                    inputField.classList.add('hidden');
+                };
+            }
+        }
+
+        function saveChatTitle(sessionId) {
+            const textSpan = document.getElementById(`title-text-${sessionId}`);
+            const inputField = document.getElementById(`title-input-${sessionId}`);
+            
+            if (inputField && textSpan) {
+                const newTitle = inputField.value.trim();
+                if (newTitle) {
+                    localStorage.setItem(`title_${sessionId}`, newTitle);
+                    textSpan.innerText = newTitle;
+                }
+                
+                textSpan.classList.remove('hidden');
+                inputField.classList.add('hidden');
+            }
+        }
+
+        function changeUser() {
+            const newUser = getUserId();
+            if (!newUser) { savyAlert("Inserisci un ID Studente valido!", "⚠️"); return; }
+            savyConfirm("Cambio Utente", `Vuoi passare all'utente "${newUser}"? La sessione corrente verrà chiusa.`, () => {
+                currentSessionId = "";
+                document.getElementById('messagesContainer').innerHTML = `
+                    <div class="message status bg-white text-[#822433] border border-pink-100 rounded-2xl px-5 py-3 max-w-[90%] mx-auto text-center font-black shadow-sm">
+                        Passato all'utente: ${newUser}. Inserisci un messaggio per iniziare.
+                    </div>`;
+                loadSessions();
+            });
+        }
+
+        async function createNewSession() {
+            const userId = getUserId();
+            if (!userId) { savyAlert("Inserisci un ID Studente nell'header prima di creare una nuova chat!"); return; }
+            const sessionId = "sess_" + Date.now();
+            try {
+                const response = await fetch(`/api/database/chat_new_session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_session_id: sessionId, user_id: userId })
+                });
+                const data = await response.json();
+                if (data.status === "success") { 
+                    currentSessionId = sessionId;
+                    localStorage.setItem(`title_${sessionId}`, "Nuova conversazione");   
+                    document.getElementById('messagesContainer').innerHTML = ""; 
+                    await loadSessions(); 
+                }
+            } catch (error) { console.error("Errore creazione sessione:", error); }
+        }
+
+        async function selectSession(sessionId) {
+            currentSessionId = sessionId;
+            loadSessions();
+            try {
+                const response = await fetch(`/api/database/chat_messages/${sessionId}`);
+                const data = await response.json();
+                if (data.status === "success") {
+                    const container = document.getElementById('messagesContainer');
+                    container.innerHTML = "";
+                    let historyMessages = data.history;
+                    historyMessages.forEach(msg => { appendMessage(msg.role, msg.content, msg.fonti); });
+                }
+            } catch (error) { console.error("Errore nel caricamento dei messaggi:", error); }
+        }
+
+        async function sendMessage() {
+            const queryInput = document.getElementById('queryInput');
+            const query = queryInput.value.trim();
+            if (!query) return;
+            const userId = getUserId();
+            if (!userId) { savyAlert("Inserisci il tuo ID Studente in alto prima di inviare un messaggio!"); return; }
+            if (!currentSessionId) { await createNewSession(); }
+
+            const currentTitle = localStorage.getItem(`title_${currentSessionId}`);
+            if (!currentTitle || currentTitle === "Nuova conversazione") {
+                let newTitle = query;
+                if (newTitle.length > 25) {
+                    newTitle = newTitle.substring(0, 25) + "...";
+                }
+                localStorage.setItem(`title_${currentSessionId}`, newTitle);
+                await loadSessions();
+            }
+
+            appendMessage('user', query);
+            queryInput.value = "";
+            queryInput.disabled = true;
+            document.getElementById('sendBtn').disabled = true;
+
+            const container = document.getElementById('messagesContainer');
+
+            const botMessageDiv = document.createElement('div');
+            botMessageDiv.className = "prose-chat max-w-[75%] p-4 rounded-2xl shadow-sm leading-relaxed self-start bg-white text-slate-900 border border-pink-100 rounded-bl-none mb-2";
+            container.appendChild(botMessageDiv);
+            container.scrollTop = container.scrollHeight;
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_session_id: currentSessionId, user_query_input: query })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+                let accumulatedText = "";
+                let accumulatedSources = "";
+
+                let textQueue = "";
+                let typingInterval = null;
+
+                botMessageDiv.innerHTML = `
+                    <div id="chatgpt-loader" class="flex items-center gap-1.5 py-1">
+                        <div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                        <div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                        <div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                    </div>`;
+
+                function startTypingEffect() {
+                    if (typingInterval) return;
+                    typingInterval = setInterval(() => {
+                        if (textQueue.length > 0) {
+                            const loader = document.getElementById('chatgpt-loader');
+                            if (loader) loader.remove();
+
+                            accumulatedText += textQueue.charAt(0);
+                            textQueue = textQueue.substring(1);
+
+                            let htmlOutput = marked.parse(accumulatedText);
+                            
+                            if (accumulatedSources) {
+                                htmlOutput += accumulatedSources;
+                            }
+
+                            botMessageDiv.innerHTML = htmlOutput;
+                            container.scrollTop = container.scrollHeight;
+                        }
+                    }, 15);
+                }
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        if (typingInterval) {
+                            clearInterval(typingInterval);
+                        }
+                        let finalOutputHTML = marked.parse(accumulatedText + textQueue);
+                        if (accumulatedSources) { 
+                            finalOutputHTML += accumulatedSources; 
+                        }
+                        botMessageDiv.innerHTML = finalOutputHTML;
+
+                        removeAgentStatus(); 
+                        break;
+                    }
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    let parts = buffer.split('\n\n');
+                    buffer = parts.pop();
+                    
+                    for (const part of parts) {
+                        const line = part.trim();
+                        if (line.startsWith('data: ')) {
+                            const jsonStr = line.replace('data: ', '').trim();
+                            if(!jsonStr) continue;
+                            
+                            try {
+                                const dataObj = JSON.parse(jsonStr);
+                                
+                                if (dataObj.step === 'status') {
+                                    showAgentStatus(dataObj.message);
+                                } 
+                                else if (dataObj.step === 'token') {
+                                    textQueue += dataObj.message;
+                                    startTypingEffect();
+                                } 
+                                else if (dataObj.step === 'sources') {
+                                    removeAgentStatus();
+                                    try {
+                                        // Il backend ora manda JSON, lo parsiamo:
+                                        const parsedData = JSON.parse(dataObj.message);
+                                        if (parsedData.urls && parsedData.urls.length > 0) {
+                                            accumulatedSources = formatSourcesUI(parsedData.urls);
+                                        }
+                                    } catch(e) {
+                                        console.error("Errore parsing fonti", e);
+                                    }
+                                }
+                                else if (dataObj.step === 'complete') {
+                                    removeAgentStatus();
+                                }
+                            } catch (e) { console.error("Errore Parsing JSON: ", e); }
+                            container.scrollTop = container.scrollHeight;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Errore streaming:", error);
+                removeAgentStatus();
+                botMessageDiv.innerHTML += "<br><em>❌ Errore di connessione.</em>";
+            } finally {
+                document.getElementById('queryInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+                document.getElementById('queryInput').focus();
+            }
+        }
+
+        async function deleteSession(sessionId) {
+            savyConfirm("Elimina Chat", "Vuoi davvero eliminare questa conversazione?", async () => {
+                try {
+                    const response = await fetch(`/api/database/erase_session/${sessionId}`, { method: 'DELETE' });
+                    const data = await response.json();
+                    if (data.status === "success") {
+                        if (currentSessionId === sessionId) {
+                            currentSessionId = "";
+                            document.getElementById('messagesContainer').innerHTML = `
+                                <div class="message status bg-white text-[#822433] border border-pink-100 rounded-2xl px-5 py-3 max-w-[90%] mx-auto text-center font-black shadow-sm">
+                                    Inserisci un messaggio in basso per iniziare la conversazione RAG.
+                                </div>`;
+                        }
+                        loadSessions();
+                    }
+                } catch (error) { console.error("Errore eliminazione sessione:", error); }
+            });
+        }
+
+        async function clearAllSessions() {
+            savyConfirm("Cancella tutto", "Sei sicuro di voler cancellare TUTTE le sessioni?", async () => {
+                const userId = getUserId();
+                try {
+                    const response = await fetch(`/api/database/erase_all_sessions/${userId}`, { method: 'DELETE' });
+                    const data = await response.json();
+                    if (data.status === "success") {
+                        currentSessionId = "";
+                        document.getElementById('messagesContainer').innerHTML = `
+                            <div class="message status bg-white text-[#822433] border border-pink-100 rounded-2xl px-5 py-3 max-w-[90%] mx-auto text-center font-black shadow-sm">
+                                Inserisci un messaggio in basso per iniziare la conversazione RAG.
+                            </div>`;
+                        loadSessions();
+                    }
+                } catch (error) { console.error("Errore pulizia storico:", error); }
+            });
+        }
+
+        function appendMessage(sender, text, fonti = null) {
+            const container = document.getElementById('messagesContainer');
+            if (!container) return;
+            const msgDiv = document.createElement('div');
+            
+            if (sender === 'user') {
+                msgDiv.className = "max-w-[75%] p-4 rounded-2xl shadow-md leading-relaxed self-end bg-[#822433] text-white font-medium rounded-br-none mb-2";
+                msgDiv.innerText = text; 
+            } else {
+                msgDiv.className = "prose-chat max-w-[75%] p-4 rounded-2xl shadow-sm leading-relaxed self-start bg-white text-slate-900 border border-pink-100 rounded-bl-none mb-2";
+                // Parsiamo il markdown per il testo
+                let htmlContent = marked.parse(text);
+                
+                // Se ci sono fonti (arrivate dal DB), le aggiungiamo in coda
+                if (fonti && Array.isArray(fonti) && fonti.length > 0) {
+                    htmlContent += formatSourcesUI(fonti);
+                }
+                
+                msgDiv.innerHTML = htmlContent;
+            }
+            
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        window.onload = () => { document.getElementById('modalUserIdInput').focus(); };
+    </script>
+</body>
+</html>

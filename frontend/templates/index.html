@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> LLM Parser</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 30px;
+            line-height: 1.6;
+            background-color: #f4f7f6;}
+
+        
+        .bar{
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            justify-content: center;
+            margin: 5px auto;
+            padding: 20px;
+            max-width: 800px;
+
+        }
+
+        .input-col{
+            flex: 3;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .input-btn{
+            flex: 1;
+            min-width: 120px;
+        }
+        
+        .container {
+            display: flex;
+            gap: 20px; 
+            margin-top: 20px;}
+
+        .section {
+            flex: 1 1 0;
+            min-width: 0; }
+        
+        #loading {
+            display: none;
+            font-weight: bold;
+            color: black;
+            margin-bottom: 15px;
+        }
+
+        .metrics-panel {
+            background: #d4edda; 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin-top: 20px 0; 
+            border:1px solid #c3e6cb;
+            width: 100%;
+            font-size: 0.85em;
+            box-sizing: border-box;
+        }
+
+        .metrics-panel h3{
+            margin-top: 0;
+            font-size: 1.2em;
+            color: black;
+        }
+
+        .metrics-panel .metrics-title {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: black;
+            margin-top: 5px;
+            display: block;
+        }
+
+        .metrics-panel .metrics-grid {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+
+        }
+        .metrics-panel .metrics-grid > div {
+            flex: 1
+        }
+
+        h1{
+            font-size: 20px;
+            margin-bottom: 0;
+        }
+        
+        .full-results-panel {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #ffeeba;
+            font-size: 0.85em;
+            /* max-width:100px; */
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .full-results-panel h3{
+            margin-top: 0;
+            font-size: 1.1em;
+            color: black;
+        }
+
+        .full-results-panel .metrics-title {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: black;
+            margin-top: 5px;
+            display: block;
+        }
+
+        .full-results-panel .metrics-grid {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+
+        }
+        .full-results-panel .metrics-grid > div {
+            flex: 1
+        }
+        
+        
+
+        select, input, .action-btn { 
+            height:38px;
+            width: 100%; 
+            margin-bottom: 0;
+            box-sizing: border-box;}
+
+        button { 
+            background-color: #007bff;
+            color: white; 
+            padding: 10px 20px; 
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled{
+            color: lightgray;
+            cursor: not-allowed;
+            opacity: 0.7;
+        } 
+        
+        .scroll-box{
+            border : 1px solid #ccc;
+            padding: 10px;
+            height: 500px;
+            font-size: 13px;
+            overflow-y: auto;
+            background: white;
+
+        }
+
+
+    </style>
+</head>
+<body>
+    <h1>Parser Evaluator</h1>
+
+    <div id = "loading">Caricamento risultati, attendere...</div>
+
+    <div class="bar">
+        <div class = "input-col">
+            <div>
+                <b><label>Inserisci un url:</label></b>
+                <input type="text" id="url_input" name="url" form="form" placeholder="https://..." value="{{ url if url else '' }}" required>
+            </div>
+            <div>
+                <b><label>Scegli il GS:</label></b>
+                <select onchange="document.getElementById('url_input').value=this.value">
+                    <option value="">--Seleziona un url dal GS--</option>
+                    {% for item in gs_list %}
+                        <option value="{{item.url}}">{{item.url}}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+        </div>
+        <div class = "button-col">
+            <form method="post" action="/analyze" id="form" onsubmit="caricamento()">
+                <button type="submit" class="action-btn">Analizza</button>
+            </form>
+        </div>
+        <div class = "button-col">
+            <form method="post" action="/analyze_full_gs" id="full_gs" onsubmit="caricamento()">
+                <input type="hidden" name="url" id = "hidden_full_gs_button">
+                <button type="submit" 
+                style="background-color: #28a745; margin-top:10px;"
+                onclick="document.getElementById('hidden_full_gs_button').value = document.getElementById('url_input').value" 
+                class="action-btn">Full GS Eval</button>
+            </form>
+        </div>
+    </div>
+
+    {% if evaluation or full_results %}
+    <div class="metrics-panel">
+        <h3 style="margin-top:0; font-size: 1.1em; color:#155724;">Analysis Results</h3>          
+            <div class="metrics-grid">
+                <div>
+                    <span class="metrics-title">Token Level Eval</span>
+                    <p><strong>Precision: </strong>{{ "%.3f" | format(evaluation.token_level_eval.precision) if evaluation else '--'}}</p>
+                    <p><strong>Recall: </strong>{{"%.3f" | format(evaluation.token_level_eval.recall) if evaluation else '--'}}</p>
+                    <p><strong>F1: </strong>{{"%.3f" | format(evaluation.token_level_eval.f1) if evaluation else '--' }}</p>
+                </div>
+                
+                <div style="border-left: 1px solid #c3e6cb; padding-left: 15px;">
+                    <span class="metrics-title">Density Level Eval</span>
+                    <p><strong>Content Density: </strong>{{"%.3f" | format(evaluation.statistical_eval.density) if evaluation else '--' }}</p>
+                </div>
+                
+                <div style="border-left: 1px solid #c3e6cb; padding-left: 15px;">
+                    <span class="metrics-title">Noise Ratio Level Eval</span>
+                    <p><strong>Noise Score: </strong>{{"%.3f" | format(evaluation.noise_eval.noise_score) if evaluation else '--' }}</p>
+                </div>
+                
+                <div style="border-left: 1px solid #c3e6cb; padding-left: 15px;">
+                    <span class="metrics-title">Coverage Level Eval</span>
+                    <p><strong>Coverage Score: </strong>{{"%.3f" | format(evaluation.coverage_eval.coverage_score) if evaluation else '--' }}</p>
+                </div>
+            </div>
+    </div>
+    {% endif %}
+
+    {% if evaluation or full_results %}
+    <div class="full-results-panel">
+        <h3>Full GS Global Performance (Averages)</h3>
+        <div class="metrics-grid">
+            <div>
+                <span class="metrics-title">Avg Token</span>
+                <!-- <h3 style="margin-top:0; font-size: 20px; color: black;">Avg Token</h3> -->
+                <p><strong>Avg Precision: </strong>{{"%.3f" | format(full_results.token_level_eval.precision) if full_results else '--' }}</p>
+                <p><strong>Avg Recall: </strong>{{"%.3f" | format(full_results.token_level_eval.recall) if full_results else '--' }}</p>
+                <p><strong>Avg F1: </strong>{{"%.3f" | format(full_results.token_level_eval.f1) if full_results else '--' }}</p>
+            </div>
+            <div style="border-left: 1px solid #ffeeba; padding-left: 15px">
+                <span class="metrics-title">Avg Density</span>
+                <p><strong>Avg Content Density: </strong>{{ "%.3f" | format(full_results.statistical_eval.density) if full_results else '--' }}</p>
+            </div>
+            <div style="border-left: 1px solid #ffeeba; padding-left: 15px">
+                <span class="metrics-title">Avg Noise Ratio</span>
+                <p><strong>Avg Noise Score: </strong>{{ "%.3f" | format(full_results.noise_eval.noise_score) if full_results else '--' }}</p>
+            </div>
+            <div style="border-left: 1px solid #ffeeba; padding-left: 15px;">
+                <span class="metrics-title">Avg Coverage</span>
+                <p><strong>Avg Coverage Score: </strong>{{ "%.3f" | format(full_results.coverage_eval.coverage_score) if full_results else '--' }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+
+    <div class="container">
+        <div class="section">
+            <h3>HTML Grezzo</h3>
+            <div class="scroll-box">
+                {% if html_raw %}
+                <code>{{ html_raw }}</code>
+                {% else %}
+                <p style="color: #999; text-align: center;">Nessun dato caricato</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="section">
+            <h3>Testo Pulito (Markdown) </h3>
+            <div class="scroll-box">
+                {% if parsed %}
+                        {{parsed}}
+                {% else %}
+                <p style="color: #999; text-align: center;">Nessun dato caricato</p>
+                {% endif %}
+            </div>
+            
+        </div>
+    </div>
+
+    <script>
+        function caricamento() {
+            const buttons = document.querySelectorAll('.action-btn');
+            buttons.forEach( b => b.disabled = true);
+            document.getElementById('loading').style.display = 'block';
+        }
+    </script>
+    
+
+    
+</body>
+</html>
